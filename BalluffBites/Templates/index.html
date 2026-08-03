@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BCM Live Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <h1>Smart Automation & Monitoring System</h1>
+        <h2>BCM Live Dashboard</h2>
+    </div>
+
+    <!-- Top 3 Cards -->
+    <div class="top-grid">
+        <div class="card">
+            <h3>Aktueller Wert</h3>
+            <div id="mainValue" class="big-value">0.00</div>
+            <p class="big-value-label">BCM Wert 6</p>
+        </div>
+
+        <div class="card">
+            <h3>Temperatur</h3>
+            <div id="temperature" class="big-value">0.0 °C</div>
+            <p class="big-value-label">BCM Wert 7</p>
+        </div>
+
+        <div class="card">
+            <h3>Max-Wert aktuelle Gruppe</h3>
+            <div id="maxValue" class="big-value">0.00</div>
+            <p class="big-value-label">Nur diese Runde</p>
+        </div>
+    </div>
+
+    <!-- Live Werte -->
+    <div class="card">
+        <h3>Live Werte</h3>
+        <div id="valuesGrid" class="values-grid"></div>
+    </div>
+
+    <!-- Diagramm -->
+    <div class="card">
+        <h3>Live Diagramm aktuelle Gruppe</h3>
+        <div class="chart-container">
+            <canvas id="liveChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Gruppenwertung -->
+    <div class="card scrollable-card">
+        <h3>Gruppenwertung</h3>
+
+        <div class="controls">
+            <input id="groupName" placeholder="Gruppenname eingeben">
+            <button onclick="saveScore()">Max-Wert speichern</button>
+            <button onclick="startNewGroup()">Neue Gruppe starten</button>
+            <button onclick="resetScores()">Scoreboard löschen</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Platz</th>
+                    <th>Gruppe</th>
+                    <th>Max-Wert</th>
+                    <th>Zeit</th>
+                </tr>
+            </thead>
+            <tbody id="scoreboard"></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+let labels = [];
+let dataPoints = [];
+let currentMax = 0;
+let scoreSaved = false;
+
+const ctx = document.getElementById("liveChart").getContext("2d");
+
+const liveChart = new Chart(ctx, {
+    type: "line",
+    data: {
+        labels: labels,
+        datasets: [{
+            label: "BCM Wert 6",
+            data: dataPoints,
+            borderWidth: 3,
+            tension: 0.3
+        }]
+    },
+    options: {
+        responsive: true,
+        animation: false,
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+async function updateData() {
+    const response = await fetch("/api/live");
+    const data = await response.json();
+
+    const values = data.values;
+    const mainValue = data.mainValue;
+
+    document.getElementById("mainValue").innerText = mainValue.toFixed(2);
+    document.getElementById("temperature").innerText = data.temperature.toFixed(1) + " °C";
+
+    if (mainValue > currentMax) {
+        currentMax = mainValue;
+        document.getElementById("maxValue").innerText = currentMax.toFixed(2);
+    }
+
+    const grid = document.getElementById("valuesGrid");
+    grid.innerHTML = "";
+
+    values.forEach((value, index) => {
+        grid.innerHTML += `
+            <div class="value-box">
+                <span>Wert ${index + 1}</span>
+                <strong>${value.toFixed(2)}</strong>
+            </div>
+        `;
+    });
+
+    labels.push(data.timestamp);
+    dataPoints.push(mainValue);
+
+    if (labels.length > 30) {
+        labels.shift();
+        dataPoints.shift();
+    }
+
+    liveChart.update();
+}
+
+async function saveScore() {
+    const groupName = document.getElementById("groupName").value.trim();
+
+    if (groupName === "") {
+        alert("Bitte Gruppennamen eingeben.");
+        return;
+    }
+
+    if (scoreSaved) {
+        alert("Diese Gruppe wurde schon gespeichert. Starte zuerst eine neue Gruppe.");
+        return;
+    }
+
+    await fetch("/api/save_score", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            groupName: groupName,
+            maxValue: currentMax
+        })
+    });
+
+    scoreSaved = true;
+    loadScoreboard();
+}
+
+function startNewGroup() {
+    currentMax = 0;
+    scoreSaved = false;
+
+    document.getElementById("maxValue").innerText = "0.00";
+    document.getElementById("groupName").value = "";
+
+    labels = [];
+    dataPoints = [];
+
+    liveChart.data.labels = labels;
+    liveChart.data.datasets[0].data = dataPoints;
+
+    liveChart.update();
+}
+
+async function loadScoreboard() {
+    const response = await fetch("/api/scoreboard");
+    const scores = await response.json();
+
+    const tbody = document.getElementById("scoreboard");
+    tbody.innerHTML = "";
+
+    scores.forEach((score, index) => {
+        tbody.innerHTML += `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${score.group}</td>
+                <td>${score.maxValue}</td>
+                <td>${score.time}</td>
+            </tr>
+        `;
+    });
+}
+
+async function resetScores() {
+    await fetch("/api/reset_scores", {
+        method: "POST"
+    });
+
+    loadScoreboard();
+}
+
+setInterval(updateData, 1000);
+loadScoreboard();
+</script>
+
+</body>
+</html>
