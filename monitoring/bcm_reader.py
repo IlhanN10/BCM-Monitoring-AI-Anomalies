@@ -10,25 +10,43 @@ HEADERS = {
     "User-Agent": "BCM-Monitoring/1.0"
 }
 
+EXPECTED_FLOAT_COUNT = 8
+BYTES_PER_FLOAT = 4
+EXPECTED_PROCESS_DATA_LENGTH = EXPECTED_FLOAT_COUNT * BYTES_PER_FLOAT
+
 
 def decode_float_values(raw_bytes):
-    values = []
+    """Decode the BCM process data into its eight big-endian float values."""
+    if not isinstance(raw_bytes, (bytes, bytearray, list, tuple)):
+        raise BCMProcessDataError(
+            "IO-Link-Prozessdaten müssen als Byte-Array geliefert werden."
+        )
 
-    for i in range(0, len(raw_bytes), 4):
-        chunk = raw_bytes[i:i + 4]
+    try:
+        payload = bytes(raw_bytes)
+    except (TypeError, ValueError) as error:
+        raise BCMProcessDataError(
+            "IO-Link-Prozessdaten enthalten ungültige Byte-Werte."
+        ) from error
 
-        if len(chunk) == 4:
-            value = struct.unpack(">f", bytes(chunk))[0]
-            values.append(round(value, 4))
+    if len(payload) != EXPECTED_PROCESS_DATA_LENGTH:
+        raise BCMProcessDataError(
+            "Ungültige Länge der IO-Link-Prozessdaten: "
+            f"{len(payload)} Byte erhalten, {EXPECTED_PROCESS_DATA_LENGTH} Byte erwartet."
+        )
 
-    while len(values) < 8:
-        values.append(0)
-
-    return values
+    return [
+        round(struct.unpack(">f", payload[offset:offset + BYTES_PER_FLOAT])[0], 4)
+        for offset in range(0, EXPECTED_PROCESS_DATA_LENGTH, BYTES_PER_FLOAT)
+    ]
 
 
 class BCMAuthenticationError(RuntimeError):
     """The IO-Link master could not be authenticated."""
+
+
+class BCMProcessDataError(RuntimeError):
+    """The IO-Link master returned invalid process data."""
 
 
 class BCMClient:
@@ -135,12 +153,11 @@ client = BCMClient()
 def read_bcm_values():
     data = client.get_process_data()
 
-    if "getData" not in data:
-        raise Exception(f"Keine getData Antwort: {data}")
-
-    if "ioLink" not in data["getData"]:
-        raise Exception(f"Keine IO-Link Daten: {data}")
-
-    raw = data["getData"]["ioLink"]["value"]
+    try:
+        raw = data["getData"]["ioLink"]["value"]
+    except (KeyError, TypeError) as error:
+        raise BCMProcessDataError(
+            "Ungültige API-Antwort: getData.ioLink.value fehlt."
+        ) from error
 
     return decode_float_values(raw)
