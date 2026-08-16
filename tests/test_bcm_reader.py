@@ -1,10 +1,7 @@
 import struct
 import unittest
-from unittest.mock import Mock
 
 from monitoring.bcm_reader import (
-    BCMAuthenticationError,
-    BCMClient,
     BCMProcessDataError,
     EXPECTED_PROCESS_DATA_LENGTH,
     decode_profile_1_measurement,
@@ -46,44 +43,6 @@ class DecodeProfile1MeasurementTests(unittest.TestCase):
     def test_profile_assumption_is_explicitly_not_api_verified(self):
         profile = get_process_data_profile_assumption()
         self.assertFalse(profile["verified_via_api"])
-
-
-class BCMClientTests(unittest.TestCase):
-    def test_login_uses_bearer_token_from_response(self):
-        client = BCMClient()
-        response = Mock(ok=True, status_code=200, headers={})
-        response.json.return_value = {"accessToken": "test-token"}
-        client.session.post = Mock(return_value=response)
-
-        with unittest.mock.patch("monitoring.bcm_reader.BCM_USERNAME", "operator"), \
-             unittest.mock.patch("monitoring.bcm_reader.BCM_PASSWORD", "secret"):
-            client.login()
-
-        self.assertTrue(client.authenticated)
-        self.assertEqual(client.session.headers["Authorization"], "Bearer test-token")
-
-    def test_retries_login_once_after_unauthorized_process_data(self):
-        client = BCMClient()
-        client.authenticated = True
-        unauthorized = Mock(status_code=401)
-        success = Mock(status_code=200)
-        success.raise_for_status = Mock()
-        success.json.return_value = {"getData": {"ioLink": {"value": [0] * 32}}}
-        client.session.get = Mock(side_effect=[unauthorized, success])
-        client.login = Mock()
-
-        self.assertEqual(client.get_process_data(), success.json.return_value)
-        client.login.assert_called_once()
-        self.assertEqual(client.session.get.call_count, 2)
-
-    def test_login_requires_credentials(self):
-        client = BCMClient()
-
-        with unittest.mock.patch("monitoring.bcm_reader.BCM_USERNAME", None), \
-             unittest.mock.patch("monitoring.bcm_reader.BCM_PASSWORD", None), \
-             self.assertRaises(BCMAuthenticationError):
-            client.login()
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ BCM_PORT_ALIAS = os.getenv("BCM_PORT_ALIAS", "master1port1")
 BCM_USERNAME = os.getenv("BCM_USERNAME")
 BCM_PASSWORD = os.getenv("BCM_PASSWORD")
 DATABASE_PATH = os.getenv("BCM_DATABASE_PATH", "data/bcm_monitoring.sqlite3")
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("BNI_REQUEST_TIMEOUT_SECONDS", "3"))
 # The BNI REST endpoints currently used by this project do not expose the
 # active BCM process-data profile. Profile 1 is therefore an explicit,
 # documented deployment assumption and must match the sensor configuration.

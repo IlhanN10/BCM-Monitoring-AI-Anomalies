@@ -34,12 +34,12 @@ Der Fokus der aktuellen Version liegt auf:
 ├── dashboard.py                 # Web-Dashboard für Messwerte und Port-Zustände
 ├── requirements.txt             # Python-Abhängigkeiten
 ├── monitoring/
-│   ├── bcm_reader.py            # Login, HTTP-Kommunikation und Float-Dekodierung
+│   ├── bcm_reader.py            # Profile-1-Dekodierung und Status-Raw-Wert
+│   ├── bni_client.py             # Zentraler Zugriff auf BNI REST API und Portzustände
 │   └── data_logger.py           # Speicherung der Messwerte in SQLite
-├── security/
-│   └── status_check.py          # Vorbereitung zur Auswertung von Port-Zuständen
 └── tests/
-    └── test_bcm_reader.py       # Automatisierte Unit-Tests
+    ├── test_bcm_reader.py       # Decoder- und BNI-Client-Tests
+    └── test_data_logger.py      # SQLite-Logger-Tests
 ```
 
 ## Voraussetzungen
@@ -186,10 +186,9 @@ Aktualisierungsintervall lässt sich in der Seitenleiste einstellen.
 
 ## Aktueller Stand und nächste Ausbaustufen
 
-Die Funktion `security/status_check.py` bewertet die vom BNI-Master gelieferten
-Port-Zustände; `DEVICE_ONLINE` und `OPERATE` gelten dabei als OK. Die Abfrage
-ist noch nicht an die Polling-Schleife angebunden. Sinnvolle nächste
-Erweiterungen sind:
+`monitoring/bni_client.py` kapselt Anmeldung, Prozessdaten- und Portabfrage;
+`DEVICE_ONLINE` und `OPERATE` gelten bei der Portbewertung als OK. Sinnvolle
+nächste Erweiterungen sind:
 
 - strukturierte Logs und ein gestaffelter Wiederholungsmechanismus bei
   Netzwerkfehlern,

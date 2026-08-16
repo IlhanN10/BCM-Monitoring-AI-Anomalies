@@ -1,5 +1,5 @@
 from config import DATABASE_PATH
-from monitoring.bcm_reader import read_bcm_measurement
+from monitoring.bni_client import BNIClient
 from monitoring.data_logger import BCMDataLogger
 import time
 
@@ -24,13 +24,14 @@ def print_bcm_measurement(measurement):
 
 def main():
     logger = BCMDataLogger(DATABASE_PATH)
+    bni_client = BNIClient()
     print("Industrial Edge Monitoring System gestartet...")
     print("Warte auf BCM Daten...\n")
 
     try:
         while True:
             try:
-                measurement = read_bcm_measurement()
+                measurement = bni_client.read_bcm_measurement()
                 logger.log_measurement(measurement)
                 print_bcm_measurement(measurement)
             except Exception as error:

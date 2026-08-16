@@ -4,13 +4,12 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
-import requests
 import streamlit as st
 
-from config import BCM_PORT_ALIAS, DATABASE_PATH, PORTS_URL
+from config import BCM_PORT_ALIAS, DATABASE_PATH
 from monitoring.bcm_reader import get_process_data_profile_assumption
+from monitoring.bni_client import BNIClient, BNINetworkError, BNIResponseError
 from monitoring.data_logger import MEASUREMENT_TABLE
-from security.status_check import evaluate_port_status
 
 
 MEASUREMENT_COLUMNS = [
@@ -55,10 +54,8 @@ def load_measurements(database_path, limit):
 def load_port_states():
     """Read the current BNI port overview without changing master settings."""
     try:
-        response = requests.get(PORTS_URL, timeout=3)
-        response.raise_for_status()
-        return evaluate_port_status(response.json()), None
-    except (requests.RequestException, ValueError, KeyError, TypeError) as error:
+        return BNIClient().get_port_statuses(), None
+    except (BNINetworkError, BNIResponseError) as error:
         return [], str(error)
 
 
