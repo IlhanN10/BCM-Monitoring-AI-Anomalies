@@ -3,6 +3,7 @@
 import sqlite3
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -16,6 +17,9 @@ MEASUREMENT_COLUMNS = [
     "collected_at", "v_rms_x", "v_rms_y", "v_rms_z", "v_peak_x", "v_peak_y",
     "v_peak_z", "contact_temperature", "status_raw",
 ]
+VIBRATION_MINIMUM_Y_MAX = 0.15
+TEMPERATURE_MINIMUM_SPAN = 2.0
+AUTOSCALE_PADDING = 0.15
 
 
 def load_measurements(database_path, limit):
@@ -74,33 +78,126 @@ def render_velocity_metrics(latest_measurement):
     status_column.metric("Status Bits Main (raw)", f"0x{int(latest_measurement['status_raw']):08X}")
 
 
-def render_charts(measurements):
+def calculate_y_domain(measurements, columns, window_seconds, minimum_span, start_at_zero):
+    """Calculate a chart range from only the newest measurements.
+
+    The full selected history remains visible. Only the vertical range forgets
+    old peaks after the configured time window.
+    """
+    newest_timestamp = measurements["collected_at"].max()
+    window_start = newest_timestamp - pd.Timedelta(seconds=window_seconds)
+    recent_values = measurements.loc[
+        measurements["collected_at"] >= window_start, columns
+    ].to_numpy().flatten()
+    recent_values = recent_values[~pd.isna(recent_values)]
+
+    if len(recent_values) == 0:
+        return None
+
+    value_min = float(recent_values.min())
+    value_max = float(recent_values.max())
+    if start_at_zero:
+        return (0, max(value_max * (1 + AUTOSCALE_PADDING), minimum_span))
+
+    value_span = max(value_max - value_min, minimum_span)
+    if value_max - value_min < minimum_span:
+        midpoint = (value_min + value_max) / 2
+        value_min = midpoint - (minimum_span / 2)
+        value_max = midpoint + (minimum_span / 2)
+    padding = value_span * AUTOSCALE_PADDING
+    return (value_min - padding, value_max + padding)
+
+
+def select_chart_measurements(measurements, live_window_enabled, window_seconds):
+    """Optionally limit only the displayed X-axis to the current live window."""
+    if not live_window_enabled:
+        return measurements
+
+    newest_timestamp = measurements["collected_at"].max()
+    window_start = newest_timestamp - pd.Timedelta(seconds=window_seconds)
+    return measurements.loc[measurements["collected_at"] >= window_start]
+
+
+def render_measurement_chart(measurements, columns, labels, title, y_title, y_domain):
+    chart_data = measurements[["collected_at", *columns]].melt(
+        id_vars="collected_at", var_name="Messwert", value_name="Wert"
+    )
+    chart_data["Messwert"] = chart_data["Messwert"].map(labels)
+
+    y_encoding = alt.Y("Wert:Q", title=y_title)
+    if y_domain is not None:
+        y_encoding = alt.Y("Wert:Q", title=y_title, scale=alt.Scale(domain=list(y_domain)))
+
+    chart = alt.Chart(chart_data).mark_line().encode(
+        x=alt.X("collected_at:T", title="Zeit"),
+        y=y_encoding,
+        color=alt.Color("Messwert:N", title=None),
+        tooltip=[
+            alt.Tooltip("collected_at:T", title="Zeit"),
+            alt.Tooltip("Messwert:N", title="Messwert"),
+            alt.Tooltip("Wert:Q", title=y_title, format=".4f"),
+        ],
+    ).properties(title=title, height=300)
+    st.altair_chart(chart, width="stretch")
+
+
+def render_charts(
+    measurements,
+    autoscale_enabled,
+    autoscale_window_seconds,
+    live_window_enabled,
+):
     st.subheader("Messverlauf")
     rms_tab, peak_tab, temperature_tab = st.tabs(
         ["v-RMS (mm/s)", "v-Peak (mm/s)", "Kontakttemperatur (°C)"]
     )
 
+    rms_columns = ["v_rms_x", "v_rms_y", "v_rms_z"]
+    peak_columns = ["v_peak_x", "v_peak_y", "v_peak_z"]
+    axis_labels = {"v_rms_x": "X", "v_rms_y": "Y", "v_rms_z": "Z",
+                   "v_peak_x": "X", "v_peak_y": "Y", "v_peak_z": "Z"}
+    rms_domain = (
+        calculate_y_domain(measurements, rms_columns, autoscale_window_seconds,
+                           VIBRATION_MINIMUM_Y_MAX, start_at_zero=True)
+        if autoscale_enabled else None
+    )
+    peak_domain = (
+        calculate_y_domain(measurements, peak_columns, autoscale_window_seconds,
+                           VIBRATION_MINIMUM_Y_MAX, start_at_zero=True)
+        if autoscale_enabled else None
+    )
+    temperature_domain = (
+        calculate_y_domain(measurements, ["contact_temperature"], autoscale_window_seconds,
+                           TEMPERATURE_MINIMUM_SPAN, start_at_zero=False)
+        if autoscale_enabled else None
+    )
+    chart_measurements = select_chart_measurements(
+        measurements, live_window_enabled, autoscale_window_seconds
+    )
+
     with rms_tab:
-        st.line_chart(
-            measurements.set_index("collected_at")[["v_rms_x", "v_rms_y", "v_rms_z"]].rename(
-                columns={"v_rms_x": "X", "v_rms_y": "Y", "v_rms_z": "Z"}
-            ), height=300,
-        )
+        render_measurement_chart(chart_measurements, rms_columns, axis_labels,
+                                 "Vibrationsgeschwindigkeit RMS", "mm/s", rms_domain)
     with peak_tab:
-        st.line_chart(
-            measurements.set_index("collected_at")[["v_peak_x", "v_peak_y", "v_peak_z"]].rename(
-                columns={"v_peak_x": "X", "v_peak_y": "Y", "v_peak_z": "Z"}
-            ), height=300,
-        )
+        render_measurement_chart(chart_measurements, peak_columns, axis_labels,
+                                 "Vibrationsgeschwindigkeit Peak", "mm/s", peak_domain)
     with temperature_tab:
-        st.line_chart(
-            measurements.set_index("collected_at")[["contact_temperature"]].rename(
-                columns={"contact_temperature": "Kontakttemperatur"}
-            ), height=300,
+        render_measurement_chart(
+            chart_measurements,
+            ["contact_temperature"],
+            {"contact_temperature": "Kontakttemperatur"},
+            "Kontakttemperatur",
+            "°C",
+            temperature_domain,
         )
 
 
-def render_live_data(record_limit):
+def render_live_data(
+    record_limit,
+    autoscale_enabled,
+    autoscale_window_seconds,
+    live_window_enabled,
+):
     measurements = load_measurements(DATABASE_PATH, record_limit)
     port_states, port_error = load_port_states()
 
@@ -119,7 +216,12 @@ def render_live_data(record_limit):
         latest_measurement = measurements.iloc[-1]
         render_velocity_metrics(latest_measurement)
         st.info("Sensorstatus: Die genaue Bitbelegung von Status Bits Main ist nicht im Projekt dokumentiert. Daher wird nur der Raw-Wert angezeigt.")
-        render_charts(measurements)
+        render_charts(
+            measurements,
+            autoscale_enabled,
+            autoscale_window_seconds,
+            live_window_enabled,
+        )
 
     st.subheader("BNI-Portzustände")
     if port_error:
@@ -157,6 +259,15 @@ def main():
             "Automatisch aktualisieren", options=[5, 10, 30, 60], value=5,
             format_func=lambda seconds: f"alle {seconds} Sekunden",
         )
+        autoscale_enabled = st.toggle("Y-Achse automatisch skalieren", value=True)
+        autoscale_window_seconds = st.select_slider(
+            "Autoscale-Zeitfenster",
+            options=[5, 10, 30, 60],
+            value=10,
+            format_func=lambda seconds: f"letzte {seconds} Sekunden",
+            disabled=not autoscale_enabled,
+        )
+        live_window_enabled = st.toggle("Live-Zeitfenster anzeigen", value=False)
         if st.button("Jetzt aktualisieren", width="stretch"):
             st.cache_data.clear()
             st.rerun()
@@ -166,7 +277,12 @@ def main():
 
     @st.fragment(run_every=f"{refresh_seconds}s")
     def live_dashboard():
-        render_live_data(record_limit)
+        render_live_data(
+            record_limit,
+            autoscale_enabled,
+            autoscale_window_seconds,
+            live_window_enabled,
+        )
 
     live_dashboard()
 
