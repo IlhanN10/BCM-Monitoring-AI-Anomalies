@@ -32,7 +32,8 @@ Der Fokus der aktuellen Version liegt auf:
 ├── main.py                      # Konsolenprogramm mit Polling-Schleife
 ├── requirements.txt             # Python-Abhängigkeiten
 ├── monitoring/
-│   └── bcm_reader.py            # Login, HTTP-Kommunikation und Float-Dekodierung
+│   ├── bcm_reader.py            # Login, HTTP-Kommunikation und Float-Dekodierung
+│   └── data_logger.py           # Speicherung der Messwerte in SQLite
 ├── security/
 │   └── status_check.py          # Vorbereitung zur Auswertung von Port-Zuständen
 └── tests/
@@ -86,6 +87,7 @@ $env:BCM_PORT_ALIAS = "master1port1"
 | `BCM_PASSWORD` | keiner | Passwort für den Master; erforderlich |
 | `BCM_MASTER_IP` | `192.168.1.1` | IP-Adresse oder Hostname des IO-Link-Masters |
 | `BCM_PORT_ALIAS` | `master1port1` | Gerätealias des angeschlossenen BCM-Sensors |
+| `BCM_DATABASE_PATH` | `data/bcm_monitoring.sqlite3` | Speicherort der lokalen SQLite-Datenbank |
 
 Die konkreten URLs werden in `config.py` aufgebaut. Das Projekt erwartet die
 Balluff-Endpunkte für Login und IO-Link-Prozessdaten.
@@ -100,6 +102,9 @@ python main.py
 
 Das Programm liest anschließend einmal pro Sekunde die Prozessdaten und gibt
 acht Werte aus. Der siebte Wert wird derzeit als Temperatur formatiert.
+Jede erfolgreiche Messung wird zusätzlich mit einem UTC-Zeitstempel in der
+SQLite-Datenbank gespeichert. Der Standardpfad `data/` ist von Git
+ausgeschlossen.
 
 Beenden mit `Strg + C`.
 
@@ -132,13 +137,13 @@ Bearer-Token-Login, fehlende Zugangsdaten und erneute Anmeldung nach HTTP 401.
 
 ## Aktueller Stand und nächste Ausbaustufen
 
-Die Funktion `security/status_check.py` enthält bereits die Grundlogik zur
-Bewertung von Port-Zuständen, ist aber noch nicht an die Polling-Schleife
-angebunden. Sinnvolle nächste Erweiterungen sind:
+Die Funktion `security/status_check.py` bewertet die vom BNI-Master gelieferten
+Port-Zustände; `DEVICE_ONLINE` und `OPERATE` gelten dabei als OK. Die Abfrage
+ist noch nicht an die Polling-Schleife angebunden. Sinnvolle nächste
+Erweiterungen sind:
 
 - strukturierte Logs und ein gestaffelter Wiederholungsmechanismus bei
   Netzwerkfehlern,
-- Speicherung von Zeitreihen für historische Auswertungen,
 - Integration der Port-Zustandsüberwachung,
 - Grenzwerte und Alarmierung sowie
 - Anomalieerkennung auf Basis der gesammelten Messdaten.

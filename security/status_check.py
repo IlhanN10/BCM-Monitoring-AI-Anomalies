@@ -4,7 +4,7 @@ def evaluate_port_status(ports):
     for port in ports:
         status = port["statusInfo"]
 
-        if status == "OPERATE":
+        if status in {"OPERATE", "DEVICE_ONLINE"}:
             level = "OK"
             message = "Gerät läuft normal."
         elif status == "COMMUNICATION_LOST":
